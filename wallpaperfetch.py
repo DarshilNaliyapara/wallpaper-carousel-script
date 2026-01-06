@@ -8,7 +8,7 @@ import subprocess
 from urllib.parse import urlparse
 
 SAVE_DIR = os.path.expanduser("~/Pictures/wallpapers")
-SETTER_SCRIPT = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/slideshow.sh"
+SETTER_URL = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/slideshow.sh"
 CATEGORY = ""
 
 def show_help():
@@ -94,14 +94,27 @@ for img_url in wallpapers:
     else:
         print(f"   • Skip: {filename}")
 
-if first_img_path and os.path.exists(first_img_path):
-    if os.path.exists(SETTER_SCRIPT):
-        try:
-            subprocess.run([SETTER_SCRIPT], check=False)
-        except OSError:
-            subprocess.run(["bash", SETTER_SCRIPT], check=False)
-    else:
-        print(f"Warning: {SETTER_SCRIPT} not found in current directory.")
-else:
-    print("❌ Could not set wallpaper (file missing).")
-    sys.exit(1)
+try:
+    # A. Fetch the script code text
+    with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
+        script_content = response.read()
+
+    # B. Run 'sh' in a detached process
+    # start_new_session=True ensures it survives if this python script dies
+    proc = subprocess.Popen(
+        ["/bin/sh"], 
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        cwd=SAVE_DIR
+    )
+
+    # C. Feed the script code to the process
+    proc.stdin.write(script_content)
+    proc.stdin.close()
+    
+    print("✅ Slideshow started.")
+
+except Exception as e:
+    print(f"❌ Failed to launch slideshow: {e}")
