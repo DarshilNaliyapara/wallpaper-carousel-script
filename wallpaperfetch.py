@@ -8,7 +8,7 @@ import subprocess
 from urllib.parse import urlparse
 
 SAVE_DIR = os.path.expanduser("~/Pictures/wallpapers")
-SETTER_SCRIPT = "./slideshow.sh"
+SETTER_SCRIPT = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/slideshow.sh"
 CATEGORY = ""
 
 def show_help():
