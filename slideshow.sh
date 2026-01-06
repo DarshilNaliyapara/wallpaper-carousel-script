@@ -1,7 +1,7 @@
 #!/bin/sh
 
 DIR="$HOME/Pictures/wallpapers"
-INTERVAL=120
+INTERVAL=3600
 
 # Ensure directory exists to prevent errors
 if [ ! -d "$DIR" ]; then
@@ -15,7 +15,6 @@ while true; do
 
     if [ -n "$RANDOM_IMG" ]; then
         
-        # FIX: standard sh way to lowercase string
         raw_de="${XDG_CURRENT_DESKTOP:-}"
         raw_session="${DESKTOP_SESSION:-}"
         
@@ -26,16 +25,13 @@ while true; do
 
         case "$ENV_ID" in
             *hyprland*)
-                if command -v swww >/dev/null 2>&1; then
+              if command -v swww >/dev/null 2>&1; then
                     if ! pgrep -x "swww-daemon" > /dev/null; then
                         swww-daemon > /dev/null 2>&1 &
                         sleep 1
                     fi
                     swww img "$RANDOM_IMG" --transition-type grow --transition-fps 60
                 else
-                    echo "❌ Error: 'swww' is not installed."
-                    echo "📂 Wallpapers are located at: $DIR"
-                    echo "⚠️ Please install swww or set the wallpaper"
                     exit 1
                 fi
                 ;;
@@ -77,11 +73,6 @@ while true; do
                 fi
                 ;;
         esac
-
-        echo "✅ Set wallpaper: $(basename "$RANDOM_IMG")"
-    else
-        echo "⚠️  No images found in $DIR"
-    fi
     
     sleep "$INTERVAL"
 done
