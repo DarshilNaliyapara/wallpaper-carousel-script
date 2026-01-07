@@ -6,6 +6,7 @@ import urllib.error
 import ssl
 import subprocess
 import re
+import time
 from urllib.parse import urlparse
 
 SAVE_DIR = os.path.expanduser("~/Pictures/wallpapers")
@@ -33,10 +34,9 @@ def kill_existing_process():
                            stderr=subprocess.DEVNULL)
             
         if pids:
-            print("Killed old instances and their sleep timers.")
+            print("Killed instances.")
 
     except subprocess.CalledProcessError:
-        # This happens if pgrep finds nothing (no process running), which is good.
         pass
     except Exception as e:
         print(f"Warning during cleanup: {e}")
@@ -57,6 +57,8 @@ automatically set them as your desktop background.
                       \033[2mExamples: anime, nature, cyberpunk, minimal\033[0m
     
     \033[36m--delay=MINUTES\033[0m   Set slideshow interval in minutes (Default: 10)
+
+    \033[36m--stop\033[0m            stop wallpaper slidshow process
 
     \033[36m-h, --help\033[0m        Show this help message and exit.
 
@@ -140,7 +142,6 @@ for img_url in wallpapers:
         print(f"   • Skip: {filename}")
 
 try:
-    # A. Read the LOCAL script file
     with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
         script_content = response.read()
     
@@ -153,7 +154,7 @@ try:
         ["/bin/sh", "-s", "WallpaperCarousel"], 
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         start_new_session=True,
         cwd=SAVE_DIR
     )
@@ -161,6 +162,17 @@ try:
     proc.stdin.write(script_content)
     proc.stdin.close()
     
-    print("✅ Slideshow started.")
+    time.sleep(0.5)
+
+    # 3. Check if process is still alive
+    if proc.poll() is None:
+        print("✅ Slideshow started.")
+    else:
+        # Process died, read the error message
+        error_msg = proc.stderr.read().decode().strip()
+        print("❌ Process not started.")
+        if error_msg:
+            print(f"Reason: {error_msg}")
+    
 except Exception as e:
     print(f"❌ Failed to launch slideshow: {e}")

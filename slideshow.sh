@@ -73,6 +73,6 @@ while true; do
                 fi
                 ;;
         esac
-    
+    fi
     sleep "$INTERVAL"
 done
