@@ -3,62 +3,96 @@ param (
 )
 
 # 1. Check if folder exists
-if (-not (Test-Path $FolderPath)) {
+if (-not (Test-Path -Path $FolderPath)) {
     Write-Host "Creating folder: $FolderPath"
     New-Item -ItemType Directory -Path $FolderPath | Out-Null
 }
 
-# 2. Define C# to convert String Path -> Windows ID List (PIDL)
+# 2. Define robust C# to handle the binary conversion safely
 $Definition = @'
 using System;
 using System.Runtime.InteropServices;
 
-public class Win32 {
+public class WallpaperHelper {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    public static extern int SHParseDisplayName(string pszName, IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
+    private static extern int SHParseDisplayName(string pszName, IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
+
+    [DllImport("shell32.dll")]
+    private static extern int ILGetSize(IntPtr pidl);
 
     [DllImport("ole32.dll")]
-    public static extern void CoTaskMemFree(IntPtr pv);
+    private static extern void CoTaskMemFree(IntPtr pv);
+
+    public static byte[] GetPathPIDL(string path) {
+        IntPtr pidl = IntPtr.Zero;
+        uint attribs;
+        
+        // Convert path to PIDL
+        int result = SHParseDisplayName(path, IntPtr.Zero, out pidl, 0, out attribs);
+
+        if (result != 0 || pidl == IntPtr.Zero) {
+            return null;
+        }
+
+        // Get the exact size of the binary structure
+        int size = ILGetSize(pidl);
+        byte[] bytes = new byte[size];
+
+        // Copy bytes safely
+        Marshal.Copy(pidl, bytes, 0, size);
+
+        // Free memory
+        CoTaskMemFree(pidl);
+        return bytes;
+    }
 }
 '@
-Add-Type -TypeDefinition $Definition
+
+# Only add type if not already added (prevents errors in ISE/repeated runs)
+if (-not ([System.Management.Automation.PSTypeName]'WallpaperHelper').Type) {
+    Add-Type -TypeDefinition $Definition
+}
 
 # 3. Generate the Binary PIDL
-$pidlPtr = [IntPtr]::Zero
-$sfgaoOut = 0
-$result = [Win32]::SHParseDisplayName($FolderPath, [IntPtr]::Zero, [ref]$pidlPtr, 0, [ref]$sfgaoOut)
+Write-Host "Generating IDList for: $FolderPath"
+$pidlBytes = [WallpaperHelper]::GetPathPIDL($FolderPath)
 
-if ($result -eq 0) {
-    # Copy the raw bytes from memory
-    $byteList = new-object System.Collections.Generic.List[byte]
-    $offset = 0
-    # Read memory until we hit the double-null terminator of the PIDL
-    do {
-        $cb = [System.Runtime.InteropServices.Marshal]::ReadByte($pidlPtr, $offset)
-        $byteList.Add($cb)
-        $cb2 = [System.Runtime.InteropServices.Marshal]::ReadByte($pidlPtr, $offset + 1)
-        $offset++
-    } while ($offset -lt 4096) # Safety limit, usually much smaller
-
-    [Win32]::CoTaskMemFree($pidlPtr)
-    $pidlBytes = $byteList.ToArray()
-} else {
-    Write-Error "Failed to parse folder path."
+if ($null -eq $pidlBytes) {
+    Write-Error "Failed to parse folder path. Ensure the path is correct and accessible."
     exit 1
 }
 
 # 4. Write to Registry
 $RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Wallpapers"
 
+# Ensure the registry key exists
+if (-not (Test-Path $RegPath)) {
+    New-Item -Path $RegPath -Force | Out-Null
+}
+
 # 0=Picture, 1=Solid Color, 2=Slideshow
-Set-ItemProperty -Path $RegPath -Name "BackgroundType" -Value 2
+Set-ItemProperty -Path $RegPath -Name "BackgroundType" -Value 2 -Type DWord
 
-# Set the binary ID of the folder
-Set-ItemProperty -Path $RegPath -Name "ImagesFolderPIDL" -Value $pidlBytes
+# Set the binary ID of the folder (Critical for Slideshow)
+Set-ItemProperty -Path $RegPath -Name "ImagesFolderPIDL" -Value $pidlBytes -Type Binary
 
-# Also set the timestamp to force a refresh (optional but helpful)
-Set-ItemProperty -Path $RegPath -Name "SlideshowSourcePath" -Value $FolderPath
+# Set the readable path (Legacy/fallback)
+Set-ItemProperty -Path $RegPath -Name "SlideshowSourcePath" -Value $FolderPath -Type String
 
-# 5. Restart Explorer to apply changes
-# This is required because Explorer caches the wallpaper settings aggressively
-Stop-Process -Name explorer
+Write-Host "Registry settings updated."
+
+# 5. Restart Explorer Safely
+Write-Host "Restarting Explorer to apply changes..."
+
+# Gracefully stop explorer, suppressing errors if it's already dead
+Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+
+# Wait a moment for the process to terminate fully
+Start-Sleep -Seconds 1
+
+# Check if it auto-restarted; if not, start it manually
+if (-not (Get-Process -Name "explorer" -ErrorAction SilentlyContinue)) {
+    Start-Process "explorer.exe"
+}
+
+Write-Host "Done! Your wallpaper should now be set to Slideshow."
