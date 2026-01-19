@@ -1,98 +1,128 @@
 param (
-    [string]$FolderPath = "$HOME\Pictures\wallpapers"
+    [string]$FolderPath = "$env:USERPROFILE\Pictures\wallpapers"
 )
 
-# 1. Check if folder exists
-if (-not (Test-Path -Path $FolderPath)) {
-    Write-Host "Creating folder: $FolderPath"
-    New-Item -ItemType Directory -Path $FolderPath | Out-Null
-}
-
-# 2. Define robust C# to handle the binary conversion safely
-$Definition = @'
+# --- 0. DEFINE TOOLS (C#) ---
+$INTERVAL=3600
+# Tool 1: PIDL Generator (For folder linking)
+$pidlCode = @'
 using System;
 using System.Runtime.InteropServices;
-
-public class WallpaperHelper {
+public class PidlGenerator {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SHParseDisplayName(string pszName, IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
-
     [DllImport("shell32.dll")]
     private static extern int ILGetSize(IntPtr pidl);
-
     [DllImport("ole32.dll")]
     private static extern void CoTaskMemFree(IntPtr pv);
-
-    public static byte[] GetPathPIDL(string path) {
+    public static byte[] GetID(string path) {
         IntPtr pidl = IntPtr.Zero;
         uint attribs;
-        
-        // Convert path to PIDL
-        int result = SHParseDisplayName(path, IntPtr.Zero, out pidl, 0, out attribs);
-
-        if (result != 0 || pidl == IntPtr.Zero) {
-            return null;
-        }
-
-        // Get the exact size of the binary structure
+        if (SHParseDisplayName(path, IntPtr.Zero, out pidl, 0, out attribs) != 0) return null;
         int size = ILGetSize(pidl);
         byte[] bytes = new byte[size];
-
-        // Copy bytes safely
         Marshal.Copy(pidl, bytes, 0, size);
-
-        // Free memory
         CoTaskMemFree(pidl);
         return bytes;
     }
 }
 '@
+if (-not ([System.Management.Automation.PSTypeName]'PidlGenerator').Type) { Add-Type -TypeDefinition $pidlCode }
 
-# Only add type if not already added (prevents errors in ISE/repeated runs)
-if (-not ([System.Management.Automation.PSTypeName]'WallpaperHelper').Type) {
-    Add-Type -TypeDefinition $Definition
+# Tool 2: Focus Helper (To bring this window back)
+$focusCode = @'
+using System;
+using System.Runtime.InteropServices;
+public class FocusHelper {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 }
+'@
+if (-not ([System.Management.Automation.PSTypeName]'FocusHelper').Type) { Add-Type -TypeDefinition $focusCode }
 
-# 3. Generate the Binary PIDL
-Write-Host "Generating IDList for: $FolderPath"
-$pidlBytes = [WallpaperHelper]::GetPathPIDL($FolderPath)
 
-if ($null -eq $pidlBytes) {
-    Write-Error "Failed to parse folder path. Ensure the path is correct and accessible."
-    exit 1
+# --- 1. SETUP: Check Folder & Images ---
+Write-Host "1. Checking Source Folder..." -ForegroundColor Cyan
+if (-not (Test-Path -Path $FolderPath)) {
+    Write-Error "Folder not found: $FolderPath"
+    exit
 }
+$count = (Get-ChildItem $FolderPath -Include *.jpg, *.png, *.jpeg -Recurse).Count
+if ($count -eq 0) {
+    Write-Error "Folder is empty! Please add images."
+    exit
+}
+Write-Host "   Found $count images. Good." -ForegroundColor Green
 
-# 4. Write to Registry
+
+# --- 2. SETUP: Prepare the Registry Data ---
+$pidl = [PidlGenerator]::GetID($FolderPath)
+
+
+# --- 3. INTERACTION: The "Human" Step ---
 $RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Wallpapers"
+$Status = Get-ItemProperty -Path $RegPath -Name "BackgroundType" -ErrorAction SilentlyContinue
 
-# Ensure the registry key exists
-if (-not (Test-Path $RegPath)) {
-    New-Item -Path $RegPath -Force | Out-Null
+if ($Status.BackgroundType -ne 2) {
+    Write-Host "`nACTION REQUIRED" -ForegroundColor Yellow
+    Write-Host "I am opening Settings. Please switch 'Personalize your background' to [Slideshow]."
+    
+    Start-Sleep -Seconds 2
+    Start-Process "ms-settings:personalization-background"
+    
+    # --- THE AUTO-DETECT LOOP ---
+    Write-Host "Waiting for you to change the setting..." -NoNewline
+    
+    do {
+        # Wait 1 second before checking again to save CPU
+        Start-Sleep -Seconds 1
+        
+        # Re-read the registry value
+        $CurrentStatus = Get-ItemProperty -Path $RegPath -Name "BackgroundType" -ErrorAction SilentlyContinue
+        
+        # Visual feedback (a dot every second)
+        Write-Host "." -NoNewline
+        
+    } until ($CurrentStatus.BackgroundType -eq 2)
+    
+    Write-Host "`nDetected! You switched to Slideshow." -ForegroundColor Green
+
+    # --- THE FOCUS STEALER ---
+    Write-Host "Returning focus to this script..."
+    Start-Sleep -Milliseconds 500 # Brief pause to let Windows settle
+    $hWnd = [FocusHelper]::GetConsoleWindow()
+    [FocusHelper]::ShowWindow($hWnd, 9) # 9 = Restore (if minimized)
+    [FocusHelper]::SetForegroundWindow($hWnd) # Force to front
+
+} else {
+    Write-Host "Already in Slideshow mode." -ForegroundColor Green
 }
 
-# 0=Picture, 1=Solid Color, 2=Slideshow
-Set-ItemProperty -Path $RegPath -Name "BackgroundType" -Value 2 -Type DWord
 
-# Set the binary ID of the folder (Critical for Slideshow)
-Set-ItemProperty -Path $RegPath -Name "ImagesFolderPIDL" -Value $pidlBytes -Type Binary
+# --- 4. FINALIZATION: Inject the Folder & Time ---
+Write-Host "`n4. Locking in Folder and 30-Minute Interval..." -ForegroundColor Cyan
 
-# Set the readable path (Legacy/fallback)
+# Inject the binary link (Critical Fix)
+Set-ItemProperty -Path $RegPath -Name "ImagesFolderPIDL" -Value $pidl -Type Binary
 Set-ItemProperty -Path $RegPath -Name "SlideshowSourcePath" -Value $FolderPath -Type String
 
-Write-Host "Registry settings updated."
+$SlidePath = "HKCU:\Control Panel\Personalization\Desktop Slideshow"
+Set-ItemProperty -Path $SlidePath -Name "Interval" -Value $INTERVAL -Type DWord 
+Set-ItemProperty -Path $SlidePath -Name "Shuffle" -Value 1 -Type DWord
 
-# 5. Restart Explorer Safely
-Write-Host "Restarting Explorer to apply changes..."
 
-# Gracefully stop explorer, suppressing errors if it's already dead
+# --- 5. REFRESH: Restart Explorer ---
+Write-Host "5. Refreshing Desktop..." -ForegroundColor Cyan
 Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
-
-# Wait a moment for the process to terminate fully
 Start-Sleep -Seconds 1
+Start-Process "explorer.exe"
 
-# Check if it auto-restarted; if not, start it manually
-if (-not (Get-Process -Name "explorer" -ErrorAction SilentlyContinue)) {
-    Start-Process "explorer.exe"
-}
-
-Write-Host "Done! Your wallpaper should now be set to Slideshow."
+Write-Host " SUCCESS! Your slideshow is now configured." -ForegroundColor Green
+Write-Host "   - Folder: $FolderPath"
+Write-Host "   - Interval: $INTERVAL"

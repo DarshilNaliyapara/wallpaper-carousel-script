@@ -9,23 +9,28 @@ import ssl
 import subprocess
 import re
 import time
+import shutil  # Added for clean install
 from urllib.parse import urlparse
 
-if sys.stdout.isatty():
-
-    sys.stdout.reconfigure(line_buffering=True)
-else:
-  
-    try:
-        sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
-    except OSError:
-
-        pass
-
+# --- Configuration & Defaults ---
 SAVE_DIR = os.path.expanduser("~/Pictures/wallpapers")
 CATEGORY = ""
 current_os = platform.system()
-DELAY_SECONDS = 10 * 60
+DELAY_MINUTES = 10
+CLEAN_INSTALL = False
+
+# State flags to track if user provided args
+category_set_by_arg = False
+delay_set_by_arg = False
+clean_set_by_arg = False
+
+# ANSI Colors
+BOLD = "\033[1m"
+CYAN = "\033[36m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+RESET = "\033[0m"
 
 
 def force_print(msg):
@@ -34,55 +39,47 @@ def force_print(msg):
 
 
 def kill_existing_process():
-    """Finds the WallpaperCarousel process, kills its children (sleep), then kills the script."""
+    """Finds the WallpaperCarousel process, kills its children, then kills the script."""
     try:
-        pid_bytes = subprocess.check_output(["pgrep", "-f", "WallpaperCarousel"])
-        pids = pid_bytes.decode().strip().split()
-
-        for pid in pids:
-            subprocess.run(
-                ["pkill", "-P", pid],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            subprocess.run(
-                ["kill", pid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-
-        if pids:
-            force_print("   • Cleaned up old instances.")
+        if current_os == "Linux":
+            pid_bytes = subprocess.check_output(["pgrep", "-f", "WallpaperCarousel"])
+            pids = pid_bytes.decode().strip().split()
+            for pid in pids:
+                subprocess.run(["pkill", "-P", pid], stderr=subprocess.DEVNULL)
+                subprocess.run(["kill", pid], stderr=subprocess.DEVNULL)
+            if pids:
+                force_print("   • Cleaned up old instances.")
+        elif current_os == "Windows":
+             subprocess.run(["taskkill", "/F", "/IM", "powershell.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     except subprocess.CalledProcessError:
         pass
     except Exception as e:
-        force_print(f"Warning during cleanup: {e}")
+        # Often benign if no process found
+        pass
 
 
 def show_help():
-    """Displays a formatted help message."""
-    help_text = """
-\033[1mWALLPAPER DOWNLOADER\033[0m
+    help_text = f"""
+{BOLD}WALLPAPER DOWNLOADER{RESET}
 ---------------------------------------------------
-A script to download wallpapers from the cloud and 
-automatically set them as your desktop background.
+A script to download wallpapers and set a slideshow.
 
-\033[1mUSAGE:\033[0m
-    curl ... | python3 - [OPTIONS]
+{BOLD}USAGE:{RESET}
+    python3 script.py [OPTIONS]
+    (Or run without arguments for interactive mode)
 
-\033[1mOPTIONS:\033[0m
-    \033[36m--category=NAME\033[0m   Fetch wallpapers from a specific category.
-                      \033[2mExamples: anime, nature, cyberpunk, minimal\033[0m
-    
-    \033[36m--delay=MINUTES\033[0m   Set slideshow interval in minutes (Default: 10)
-
-    \033[36m--stop\033[0m            stop wallpaper slidshow process
-
-    \033[36m-h, --help\033[0m        Show this help message and exit.
+{BOLD}OPTIONS:{RESET}
+    {CYAN}--category=NAME{RESET}   Fetch specific category (anime, cars, nature, etc.)
+    {CYAN}--delay=MINUTES{RESET}   Set slideshow interval (Default: 10)
+    {CYAN}--clean{RESET}           Delete existing wallpapers before downloading
+    {CYAN}--stop{RESET}            Stop the background process
+    {CYAN}-h, --help{RESET}        Show this help message
     """
     force_print(help_text)
 
 
-# --- Argument Parsing ---
+# --- 1. Argument Parsing ---
 args = sys.argv[1:]
 while args:
     arg = args.pop(0)
@@ -92,21 +89,93 @@ while args:
     elif arg.startswith("--stop"):
         kill_existing_process()
         sys.exit(0)
+    elif arg.startswith("--clean"):
+        CLEAN_INSTALL = True
+        clean_set_by_arg = True
     elif arg.startswith("--category="):
         CATEGORY = arg.split("=", 1)[1]
+        category_set_by_arg = True
     elif arg.startswith("--delay="):
         try:
-            minutes = int(arg.split("=", 1)[1])
-            DELAY_SECONDS = minutes * 60
+            DELAY_MINUTES = int(arg.split("=", 1)[1])
+            delay_set_by_arg = True
         except ValueError:
-            force_print("Error: Delay must be a number (in minutes).")
+            force_print(f"{RED}Error: Delay must be a number.{RESET}")
             sys.exit(1)
     else:
-        force_print(f"\033[31mError: Unknown parameter '{arg}'\033[0m")
+        force_print(f"{RED}Error: Unknown parameter '{arg}'{RESET}")
         sys.exit(1)
+
+
+# --- 2. Interactive Questions ---
+
+# Ask for Clean Install
+if not clean_set_by_arg:
+    force_print(f"\n{BOLD}Do you want to perform a clean install?{RESET}")
+    force_print(f"   (Deletes all files in {SAVE_DIR} before downloading)")
+    choice = input(f"Clean install? [y/N]: ").strip().lower()
+    if choice in ('y', 'yes'):
+        CLEAN_INSTALL = True
+
+# Ask for Category
+if not category_set_by_arg:
+    print(f"\n{BOLD}Which category of wallpapers would you like?{RESET}")
+    print(f"  {GREEN}1){RESET} Random / All")
+    print(f"  {GREEN}2){RESET} Cars")
+    print(f"  {GREEN}3){RESET} Anime")
+    print(f"  {GREEN}4){RESET} Nature")
+    print(f"  {GREEN}5){RESET} Cyberpunk")
+    print(f"  {GREEN}6){RESET} Minimal")
+    print(f"  {GREEN}7){RESET} Custom (Type your own)")
+    
+    cat_choice = input(f"Select an option [1-7]: ").strip()
+    
+    if cat_choice == '1': CATEGORY = ""
+    elif cat_choice == '2': CATEGORY = "cars"
+    elif cat_choice == '3': CATEGORY = "anime"
+    elif cat_choice == '4': CATEGORY = "nature"
+    elif cat_choice == '5': CATEGORY = "cyberpunk"
+    elif cat_choice == '6': CATEGORY = "minimal"
+    elif cat_choice == '7': CATEGORY = input("Enter category name: ").strip()
+    else:
+        force_print(f"{YELLOW}Invalid choice, defaulting to Random/All.{RESET}")
+        CATEGORY = ""
+
+# Ask for Delay
+if not delay_set_by_arg:
+    print(f"\n{BOLD}How many minutes should each wallpaper stay?{RESET}")
+    d_input = input(f"Enter minutes [Default: 10]: ").strip()
+    if d_input.isdigit():
+        DELAY_MINUTES = int(d_input)
+
+
+# --- 3. Execution Logic ---
+DELAY_SECONDS = DELAY_MINUTES * 60
+
+clean_msg = f"{RED}Yes (Wipe){RESET}" if CLEAN_INSTALL else f"{GREEN}No (Keep){RESET}"
+force_print(f"\n{CYAN}Configuration:{RESET}")
+force_print(f"   Category: {BOLD}{CATEGORY if CATEGORY else 'All'}{RESET}")
+force_print(f"   Delay:    {BOLD}{DELAY_MINUTES}m{RESET}")
+force_print(f"   Clean:    {clean_msg}")
 
 if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)
+
+# Perform Clean Install
+if CLEAN_INSTALL:
+    force_print(f"\n🧹 {YELLOW}Cleaning up old wallpapers...{RESET}")
+    # Delete contents of SAVE_DIR safely
+    for filename in os.listdir(SAVE_DIR):
+        file_path = os.path.join(SAVE_DIR, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            force_print(f"   x Failed to delete {file_path}. Reason: {e}")
+    force_print(f"   • Removed files in {SAVE_DIR}")
+
 
 # --- Fetching Data ---
 url = f"https://wallpaper-carousel-production.up.railway.app/api/v1/wallpapers?category={CATEGORY}"
@@ -115,20 +184,23 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 try:
-    force_print("🔍 Connecting to server (this may take a moment)...")  # <--- ADDED
+    force_print("\n🔍 Connecting to server...")
     with urllib.request.urlopen(url, context=ssl_context) as response:
         if response.status != 200:
-            force_print("Error: Failed to fetch data.")
+            force_print(f"{RED}Error: Failed to fetch data.{RESET}")
             sys.exit(1)
         data = json.loads(response.read().decode())
 except Exception as e:
-    force_print(f"Error: Failed to fetch data. {e}")
+    force_print(f"{RED}Error: Failed to fetch data. {e}{RESET}")
     sys.exit(1)
 
 wallpapers = data.get("data", {}).get("wallpapers", [])
-force_print(f"📂 Downloading {len(wallpapers)} images to {SAVE_DIR}...")
 
-first_img_path = None
+if not wallpapers:
+    force_print(f"{RED}No wallpapers found for category: {CATEGORY}{RESET}")
+    sys.exit(1)
+
+force_print(f"📂 Downloading {len(wallpapers)} images to {SAVE_DIR}...")
 
 for img_url in wallpapers:
     if not img_url:
@@ -137,22 +209,20 @@ for img_url in wallpapers:
     filename = os.path.basename(urlparse(img_url).path)
     filepath = os.path.join(SAVE_DIR, filename)
 
-    if first_img_path is None:
-        first_img_path = filepath
-
     if not os.path.exists(filepath):
-        force_print(f"   ↓ Downloading: {filename}")  # <--- UPDATED
         try:
-            with urllib.request.urlopen(
-                img_url, context=ssl_context
-            ) as dl_response, open(filepath, "wb") as out_file:
-                out_file.write(dl_response.read())
+            with urllib.request.urlopen(img_url, context=ssl_context) as dl_resp, open(filepath, "wb") as out_file:
+                out_file.write(dl_resp.read())
+            force_print(f"   ↓ {GREEN}Downloaded:{RESET} {filename}")
         except Exception as e:
-            force_print(f"   x Failed to download {filename}: {e}")
+            force_print(f"   x {RED}Failed:{RESET} {filename}: {e}")
     else:
-        force_print(f"   • Skip: {filename}")
+        force_print(f"   • {YELLOW}Skip:{RESET} {filename} (Exists)")
+
 
 # --- Slideshow Setup ---
+force_print("\n⚙️  Configuring background process...")
+
 if current_os == "Linux":
     SETTER_URL = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/slideshow.sh"
     regex_pattern = rb"INTERVAL=\d+"
@@ -164,20 +234,13 @@ elif current_os == "Windows":
     SETTER_URL = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/set-slideshow.ps1"
     regex_pattern = rb"\$INTERVAL\s*=\s*\d+"
     replacement_line = f"$INTERVAL={DELAY_SECONDS}".encode()
-    shell_cmd = [
-        "powershell",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "-",
-    ]
+    shell_cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "-"]
     creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
 else:
-    raise OSError(f"Unsupported OS: {current_os}")
+    force_print(f"{RED}Unsupported OS: {current_os}{RESET}")
+    sys.exit(1)
 
 try:
-    force_print("⚙️  Configuring background process...")
     with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
         script_content = response.read()
 
@@ -201,12 +264,12 @@ try:
     time.sleep(1.0)
 
     if proc.poll() is None:
-        force_print("✅ Slideshow started successfully.")
+        force_print(f"✅ {BOLD}Slideshow started successfully.{RESET}")
     else:
         error_msg = proc.stderr.read().decode().strip()
-        force_print("❌ Process failed to start.")
+        force_print(f"{RED}❌ Process failed to start.{RESET}")
         if error_msg:
             force_print(f"Reason: {error_msg}")
 
 except Exception as e:
-    force_print(f"❌ Failed to launch slideshow: {e}")
+    force_print(f"{RED}❌ Failed to launch slideshow: {e}{RESET}")
