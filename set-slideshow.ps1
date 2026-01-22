@@ -68,15 +68,13 @@ $RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Wallpapers"
 $Status = Get-ItemProperty -Path $RegPath -Name "BackgroundType" -ErrorAction SilentlyContinue
 
 if ($Status.BackgroundType -ne 2) {
-    Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-    Write-Host "║  ONE-TIME SETUP REQUIRED (Due to Windows Security)        ║" -ForegroundColor Yellow
-    Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+    Write-Host "ONE-TIME SETUP REQUIRED (Due to Windows Security" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Windows Settings will open in 2 seconds..." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "→ Click the dropdown under 'Personalize your background'" -ForegroundColor White
-    Write-Host "→ Select 'Slideshow' from the list" -ForegroundColor White
-    Write-Host "→ This script will detect the change automatically!" -ForegroundColor White
+    Write-Host "Click the dropdown under 'Personalize your background'" -ForegroundColor White
+    Write-Host "Select 'Slideshow' from the list" -ForegroundColor White
+    Write-Host "This script will detect the change automatically!" -ForegroundColor White
     Write-Host ""
     Write-Host "(This is required only once per computer)" -ForegroundColor Gray
     
@@ -92,7 +90,6 @@ if ($Status.BackgroundType -ne 2) {
         Write-Host "." -NoNewline -ForegroundColor Cyan
     } until ($CurrentStatus.BackgroundType -eq 2)
     
-    Write-Host " ✓" -ForegroundColor Green
     Write-Host "Slideshow mode detected!" -ForegroundColor Green
 
     # --- THE FOCUS STEALER ---
@@ -103,7 +100,7 @@ if ($Status.BackgroundType -ne 2) {
     [FocusHelper]::SetForegroundWindow($hWnd)
 
 } else {
-    Write-Host "`n✓ Already in Slideshow mode." -ForegroundColor Green
+    Write-Host "`nAlready in Slideshow mode." -ForegroundColor Green
 }
 
 
@@ -125,8 +122,6 @@ Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 Start-Process "explorer.exe"
 
-Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║  ✓ SUCCESS! Slideshow is now configured                   ║" -ForegroundColor Green
-Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "SUCCESS! Slideshow is now configured" -ForegroundColor Green
 Write-Host "   Folder:   $FolderPath" -ForegroundColor White
 Write-Host "   Interval: $Interval seconds ($([math]::Round($Interval/60, 1)) minutes)" -ForegroundColor White

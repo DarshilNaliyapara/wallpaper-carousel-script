@@ -227,24 +227,24 @@ if current_os == "Linux":
         
 elif current_os == "Windows":
     SETTER_URL = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/set-slideshow.ps1"
-    creation_flags = 0  # Normal window so output is visible
+    creation_flags = 0 
     
     try:
         with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
             script_content = response.read()
         
         new_interval_val = int(DELAY_SECONDS)
-        pattern = rb"(?i)(\$INTERVAL\s*=\s*)(\d+)"
-        replacement = f"\\g<1>{new_interval_val}".encode()
+        pattern = rb"(\$Interval\s*=\s*)(\d+)"
+        replacement = f"$Interval = {new_interval_val}".encode()
 
-        script_content, count = re.subn(pattern, replacement, script_content)
+        script_content, count = re.subn(pattern, replacement, script_content, count=1)
 
         if count == 0:
-            force_print("⚠️  WARNING: Could not find '$INTERVAL=...' to replace in the script.")
+            force_print("⚠️  WARNING: Could not find '$Interval=...' to replace in the script.")
+            force_print("   The slideshow will use the default interval from the PowerShell script.")
         else:
-            force_print(f"✅ Success: Replaced interval with {new_interval_val} seconds.")
+            force_print(f"✅ Interval set to {new_interval_val} seconds ({DELAY_MINUTES} minutes).")
 
-        # Use -WindowStyle Normal to keep the window visible
         shell_cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Normal", "-Command", "-"]
     except Exception as e:
         force_print(f"{RED}❌ Error downloading script: {e}{RESET}")
@@ -264,7 +264,6 @@ try:
         )
         force_print(f"✅ {BOLD}PowerShell window opened - follow the instructions there.{RESET}")
     else:
-        # For Linux, run in background as before
         proc = subprocess.Popen(
             shell_cmd,
             stdin=subprocess.PIPE,
