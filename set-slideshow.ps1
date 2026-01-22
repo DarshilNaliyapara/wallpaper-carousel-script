@@ -112,8 +112,12 @@ Set-ItemProperty -Path $RegPath -Name "ImagesFolderPIDL" -Value $pidl -Type Bina
 Set-ItemProperty -Path $RegPath -Name "SlideshowSourcePath" -Value $FolderPath -Type String
 
 $SlidePath = "HKCU:\Control Panel\Personalization\Desktop Slideshow"
-Set-ItemProperty -Path $SlidePath -Name "Interval" -Value $Interval -Type DWord 
+$IntervalMs = $Interval * 1000
+Set-ItemProperty -Path $SlidePath -Name "Interval" -Value $IntervalMs -Type DWord 
 Set-ItemProperty -Path $SlidePath -Name "Shuffle" -Value 1 -Type DWord
+
+Write-Host "   Setting interval to $Interval" -ForegroundColor Gray
+
 
 
 # --- 5. REFRESH: Restart Explorer ---
