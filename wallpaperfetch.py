@@ -192,7 +192,12 @@ if not wallpapers:
 
 force_print(f"📂 Downloading {len(wallpapers)} images to {SAVE_DIR}...")
 
-for img_url in wallpapers:
+for item in wallpapers:
+    if isinstance(item, dict):
+        img_url = item.get("imgLink")
+    if not img_url:
+        continue
+    
     filename = os.path.basename(urlparse(img_url).path)
     filepath = os.path.join(SAVE_DIR, filename)
     if not os.path.exists(filepath):
