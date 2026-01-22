@@ -116,10 +116,6 @@ $IntervalMs = $Interval * 1000
 Set-ItemProperty -Path $SlidePath -Name "Interval" -Value $IntervalMs -Type DWord 
 Set-ItemProperty -Path $SlidePath -Name "Shuffle" -Value 1 -Type DWord
 
-Write-Host "   Setting interval to $Interval" -ForegroundColor Gray
-
-
-
 # --- 5. REFRESH: Restart Explorer ---
 Write-Host "5. Refreshing Desktop..." -ForegroundColor Cyan
 Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
@@ -128,5 +124,5 @@ Start-Process "explorer.exe"
 
 Write-Host "SUCCESS! Slideshow is now configured" -ForegroundColor Green
 Write-Host "   Folder:   $FolderPath" -ForegroundColor White
-Write-Host "   Interval: $Interval seconds ($([math]::Round($Interval/60, 1)) minutes)" -ForegroundColor White
+Write-Host "   Interval: $([math]::Round($Interval/60, 1)) minutes" -ForegroundColor White
 exit

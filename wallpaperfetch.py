@@ -243,7 +243,7 @@ elif current_os == "Windows":
             force_print("⚠️  WARNING: Could not find '$Interval=...' to replace in the script.")
             force_print("   The slideshow will use the default interval from the PowerShell script.")
         else:
-            force_print(f"✅ Interval set to {new_interval_val} seconds ({DELAY_MINUTES} minutes).")
+            force_print(f"✅ Interval set to {DELAY_MINUTES} minutes.")
 
         shell_cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Normal", "-Command", "-"]
     except Exception as e:
