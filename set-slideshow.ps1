@@ -129,3 +129,4 @@ Start-Process "explorer.exe"
 Write-Host "SUCCESS! Slideshow is now configured" -ForegroundColor Green
 Write-Host "   Folder:   $FolderPath" -ForegroundColor White
 Write-Host "   Interval: $Interval seconds ($([math]::Round($Interval/60, 1)) minutes)" -ForegroundColor White
+exit
