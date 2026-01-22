@@ -12,9 +12,6 @@ import time
 import shutil
 from urllib.parse import urlparse
 
-# --- FIX FOR CURL | PYTHON INTERACTIVITY ---
-# This reconnects sys.stdin to the terminal (/dev/tty) if the script
-# is being piped in. This allows input() to work.
 if not sys.stdin.isatty():
     try:
         # Linux / macOS
@@ -178,7 +175,7 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 try:
-    force_print("\n🔍 Connecting to server...")
+    force_print("\n🌐 Connecting to server...")
     with urllib.request.urlopen(url, context=ssl_context) as response:
         data = json.loads(response.read().decode())
 except Exception:
@@ -190,9 +187,10 @@ if not wallpapers:
     force_print(f"{RED}No wallpapers found.{RESET}")
     sys.exit(1)
 
-force_print(f"📂 Downloading {len(wallpapers)} images to {SAVE_DIR}...")
+force_print(f"📥 Downloading {len(wallpapers)} images to {SAVE_DIR}...")
 
 for item in wallpapers:
+    img_url = None
     if isinstance(item, dict):
         img_url = item.get("imgLink")
     if not img_url:
@@ -219,38 +217,72 @@ if current_os == "Linux":
     replacement_line = f"INTERVAL={DELAY_SECONDS}".encode()
     shell_cmd = ["/bin/sh", "-s", "WallpaperCarousel"]
     creation_flags = 0
+    
+    try:
+        with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
+            script_content = re.sub(regex_pattern, replacement_line, response.read())
+    except Exception as e:
+        force_print(f"{RED}❌ Error downloading script: {e}{RESET}")
+        sys.exit(1)
+        
 elif current_os == "Windows":
     SETTER_URL = "https://raw.githubusercontent.com/DarshilNaliyapara/wallpaper-carousel-script/main/set-slideshow.ps1"
-    regex_pattern = rb"\$INTERVAL\s*=\s*\d+"
-    replacement_line = f"$INTERVAL={DELAY_SECONDS}".encode()
-    shell_cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "-"]
-    creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+    creation_flags = 0  # Normal window so output is visible
+    
+    try:
+        with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
+            script_content = response.read()
+        
+        new_interval_val = int(DELAY_SECONDS)
+        pattern = rb"(?i)(\$INTERVAL\s*=\s*)(\d+)"
+        replacement = f"\\g<1>{new_interval_val}".encode()
+
+        script_content, count = re.subn(pattern, replacement, script_content)
+
+        if count == 0:
+            force_print("⚠️  WARNING: Could not find '$INTERVAL=...' to replace in the script.")
+        else:
+            force_print(f"✅ Success: Replaced interval with {new_interval_val} seconds.")
+
+        # Use -WindowStyle Normal to keep the window visible
+        shell_cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Normal", "-Command", "-"]
+    except Exception as e:
+        force_print(f"{RED}❌ Error downloading script: {e}{RESET}")
+        sys.exit(1)
 else:
+    force_print(f"{RED}Unsupported OS: {current_os}{RESET}")
     sys.exit(1)
 
 try:
-    with urllib.request.urlopen(SETTER_URL, context=ssl_context) as response:
-        script_content = re.sub(regex_pattern, replacement_line, response.read())
-
     kill_existing_process()
     
-    proc = subprocess.Popen(
-        shell_cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        start_new_session=True if current_os != "Windows" else False,
-        creationflags=creation_flags,
-        cwd=SAVE_DIR,
-    )
+    if current_os == "Windows":
+        proc = subprocess.Popen(
+            shell_cmd,
+            stdin=subprocess.PIPE,
+            cwd=SAVE_DIR,
+        )
+        force_print(f"✅ {BOLD}PowerShell window opened - follow the instructions there.{RESET}")
+    else:
+        # For Linux, run in background as before
+        proc = subprocess.Popen(
+            shell_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            cwd=SAVE_DIR,
+        )
+        
     proc.stdin.write(script_content)
     proc.stdin.close()
     
-    time.sleep(1)
-    if proc.poll() is None:
-        force_print(f"✅ {BOLD}Slideshow started.{RESET}")
-    else:
-        force_print(f"{RED}❌ Process failed to start.{RESET}")
+    if current_os != "Windows":
+        time.sleep(1)
+        if proc.poll() is None:
+            force_print(f"✅ {BOLD}Slideshow started.{RESET}")
+        else:
+            force_print(f"{RED}❌ Process failed to start.{RESET}")
 
 except Exception as e:
     force_print(f"{RED}❌ Error: {e}{RESET}")

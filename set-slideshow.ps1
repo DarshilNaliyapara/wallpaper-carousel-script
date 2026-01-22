@@ -1,10 +1,8 @@
 param (
-    [string]$FolderPath = "$env:USERPROFILE\Pictures\wallpapers"
+    [string]$FolderPath = "$env:USERPROFILE\Pictures\wallpapers",
+    [int]$Interval = 3600  # Default value
 )
 
-# --- 0. DEFINE TOOLS (C#) ---
-$INTERVAL=3600
-# Tool 1: PIDL Generator (For folder linking)
 $pidlCode = @'
 using System;
 using System.Runtime.InteropServices;
@@ -70,50 +68,54 @@ $RegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Wallpapers"
 $Status = Get-ItemProperty -Path $RegPath -Name "BackgroundType" -ErrorAction SilentlyContinue
 
 if ($Status.BackgroundType -ne 2) {
-    Write-Host "`nACTION REQUIRED" -ForegroundColor Yellow
-    Write-Host "I am opening Settings. Please switch 'Personalize your background' to [Slideshow]."
+    Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+    Write-Host "║  ONE-TIME SETUP REQUIRED (Due to Windows Security)        ║" -ForegroundColor Yellow
+    Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Windows Settings will open in 2 seconds..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "→ Click the dropdown under 'Personalize your background'" -ForegroundColor White
+    Write-Host "→ Select 'Slideshow' from the list" -ForegroundColor White
+    Write-Host "→ This script will detect the change automatically!" -ForegroundColor White
+    Write-Host ""
+    Write-Host "(This is required only once per computer)" -ForegroundColor Gray
     
     Start-Sleep -Seconds 2
     Start-Process "ms-settings:personalization-background"
     
     # --- THE AUTO-DETECT LOOP ---
-    Write-Host "Waiting for you to change the setting..." -NoNewline
+    Write-Host "`nWaiting for slideshow mode" -NoNewline -ForegroundColor Cyan
     
     do {
-        # Wait 1 second before checking again to save CPU
         Start-Sleep -Seconds 1
-        
-        # Re-read the registry value
         $CurrentStatus = Get-ItemProperty -Path $RegPath -Name "BackgroundType" -ErrorAction SilentlyContinue
-        
-        # Visual feedback (a dot every second)
-        Write-Host "." -NoNewline
-        
+        Write-Host "." -NoNewline -ForegroundColor Cyan
     } until ($CurrentStatus.BackgroundType -eq 2)
     
-    Write-Host "`nDetected! You switched to Slideshow." -ForegroundColor Green
+    Write-Host " ✓" -ForegroundColor Green
+    Write-Host "Slideshow mode detected!" -ForegroundColor Green
 
     # --- THE FOCUS STEALER ---
-    Write-Host "Returning focus to this script..."
-    Start-Sleep -Milliseconds 500 # Brief pause to let Windows settle
+    Write-Host "Returning focus to this script..." -ForegroundColor Gray
+    Start-Sleep -Milliseconds 500
     $hWnd = [FocusHelper]::GetConsoleWindow()
-    [FocusHelper]::ShowWindow($hWnd, 9) # 9 = Restore (if minimized)
-    [FocusHelper]::SetForegroundWindow($hWnd) # Force to front
+    [FocusHelper]::ShowWindow($hWnd, 9)
+    [FocusHelper]::SetForegroundWindow($hWnd)
 
 } else {
-    Write-Host "Already in Slideshow mode." -ForegroundColor Green
+    Write-Host "`n✓ Already in Slideshow mode." -ForegroundColor Green
 }
 
 
 # --- 4. FINALIZATION: Inject the Folder & Time ---
-Write-Host "`n4. Locking in Folder and 30-Minute Interval..." -ForegroundColor Cyan
+Write-Host "`n4. Configuring slideshow settings..." -ForegroundColor Cyan
 
 # Inject the binary link (Critical Fix)
 Set-ItemProperty -Path $RegPath -Name "ImagesFolderPIDL" -Value $pidl -Type Binary
 Set-ItemProperty -Path $RegPath -Name "SlideshowSourcePath" -Value $FolderPath -Type String
 
 $SlidePath = "HKCU:\Control Panel\Personalization\Desktop Slideshow"
-Set-ItemProperty -Path $SlidePath -Name "Interval" -Value $INTERVAL -Type DWord 
+Set-ItemProperty -Path $SlidePath -Name "Interval" -Value $Interval -Type DWord 
 Set-ItemProperty -Path $SlidePath -Name "Shuffle" -Value 1 -Type DWord
 
 
@@ -123,6 +125,8 @@ Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 Start-Process "explorer.exe"
 
-Write-Host " SUCCESS! Your slideshow is now configured." -ForegroundColor Green
-Write-Host "   - Folder: $FolderPath"
-Write-Host "   - Interval: $INTERVAL"
+Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+Write-Host "║  ✓ SUCCESS! Slideshow is now configured                   ║" -ForegroundColor Green
+Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "   Folder:   $FolderPath" -ForegroundColor White
+Write-Host "   Interval: $Interval seconds ($([math]::Round($Interval/60, 1)) minutes)" -ForegroundColor White
