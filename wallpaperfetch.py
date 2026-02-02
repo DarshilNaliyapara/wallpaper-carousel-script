@@ -169,7 +169,7 @@ if CLEAN_INSTALL:
             pass
 
 # Fetch and Download
-url = f"https://wallpaper-carousel-production.up.railway.app/api/v1/wallpapers?category={CATEGORY}"
+url = f"https://shilyscape-backend.onrender.com/api/v1/wallpapers?category={CATEGORY}"
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
@@ -196,7 +196,7 @@ for item in wallpapers:
     if not img_url:
         continue
     
-    filename = os.path.basename(urlparse(img_url).path)
+    filename = os.path.basename(item.get("name") or urlparse(img_url).path)
     filepath = os.path.join(SAVE_DIR, filename)
     if not os.path.exists(filepath):
         try:
