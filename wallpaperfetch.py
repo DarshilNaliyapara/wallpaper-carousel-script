@@ -196,7 +196,28 @@ for item in wallpapers:
     if not img_url:
         continue
     
-    filename = os.path.basename(item.get("name") or urlparse(img_url).path)
+    parsed_path = urlparse(img_url).path
+    _, ext = os.path.splitext(parsed_path)
+    
+    # If URL doesn't have an extension, default to .jpg
+    if not ext:
+        ext = ".jpg"
+
+    # 2. Determine the filename
+    raw_name = item.get("name")
+    if raw_name:
+        # If the name doesn't have an extension, add the one from the URL
+        if not os.path.splitext(raw_name)[1]:
+            filename = f"{raw_name}{ext}"
+        else:
+            filename = raw_name
+    else:
+        # Fallback: Use the filename from the URL
+        filename = os.path.basename(parsed_path)
+        if not os.path.splitext(filename)[1]:
+            filename += ext
+            
+    filename = os.path.basename(filename)
     filepath = os.path.join(SAVE_DIR, filename)
     if not os.path.exists(filepath):
         try:
